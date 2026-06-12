@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<title>小小文明 · Tiny Empires</title>
+<title>Tiny Empires</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
   html, body { margin: 0; padding: 0; height: 100%; background: #1b2330; overflow: hidden;
@@ -60,8 +60,8 @@
     <canvas id="cv"></canvas>
     <div id="hint"></div>
     <div id="overlay">
-      <h1>小小文明 · Tiny Empires</h1>
-      <p>选一个文明。采集 🌲🍖 → 造兵营 → 出兵 → 推平对面的主城 🏯。每个文明各有所长,没有谁最强。</p>
+      <h1>Tiny Empires</h1>
+      <p>Pick a civilization. Gather 🌲🍖 → build a barracks → train an army → raze the enemy Town Center 🏯. Each civ has its own strengths — no "best" civ.</p>
       <div class="civpick" id="civpick"></div>
     </div>
   </div>
@@ -70,9 +70,9 @@
 <script>
 "use strict";
 /* ===========================================================================
-   小小文明 · Tiny Empires  — v1
-   单文件 HTML5 Canvas RTS。希腊 vs 中国,打 AI。给 Sam 和儿子一起玩。
-   设计见 DESIGN_v1.md。零依赖、零构建,iPad Safari 直接跑。
+   Tiny Empires — v1
+   Single-file HTML5 Canvas RTS. Greece vs China, vs AI. For Sam and his son.
+   See DESIGN_v1.md. Zero deps, zero build. Runs in iPad Safari.
    =========================================================================== */
 
 // ---- grid / world ----
@@ -85,19 +85,19 @@ const T_GRASS = 0, T_TREE = 1, T_FOOD = 2, T_WATER = 3;
 // ---- civ definitions ----
 const CIVS = {
   china: {
-    name: "中国", flag: "🐉", color: "#c0392b", light: "#e9573f",
-    melee: { key: "cav", emoji: "🐎", name: "骑兵", hp: 100, dmg: 14, range: 1, speed: 2.6, atkCd: .9, wood: 20, food: 70, train: 7 },
-    ranged: { key: "xbow", emoji: "🏹", name: "弩兵", hp: 45, dmg: 13, range: 4, speed: 1.7, atkCd: 1.3, wood: 30, food: 40, train: 6 },
-    blurb: ["🐎 骑兵:快、冲锋猛", "🏹 弩兵:远程火力强", "后期解锁火药 💥"]
+    name: "China", flag: "🐉", color: "#c0392b", light: "#e9573f",
+    melee: { key: "cav", emoji: "🐎", name: "Cavalry", hp: 100, dmg: 14, range: 1, speed: 2.6, atkCd: .9, wood: 20, food: 70, train: 7 },
+    ranged: { key: "xbow", emoji: "🏹", name: "Crossbow", hp: 45, dmg: 13, range: 4, speed: 1.7, atkCd: 1.3, wood: 30, food: 40, train: 6 },
+    blurb: ["🐎 Cavalry — fast, hard-charging", "🏹 Crossbow — strong ranged fire", "Gunpowder later 💥"]
   },
   greece: {
-    name: "希腊", flag: "🏛️", color: "#2e6da4", light: "#4a90d9",
-    melee: { key: "hoplite", emoji: "🛡️", name: "重装步兵", hp: 140, dmg: 12, range: 1, speed: 1.7, atkCd: 1.0, wood: 20, food: 70, train: 7 },
-    ranged: { key: "archer", emoji: "🎯", name: "弓箭手", hp: 50, dmg: 9, range: 4, speed: 1.9, atkCd: 1.1, wood: 30, food: 40, train: 6 },
-    blurb: ["🛡️ 重装步兵:超硬,列阵防守", "🎯 弓箭手:稳定远程", "经济均衡"]
+    name: "Greece", flag: "🏛️", color: "#2e6da4", light: "#4a90d9",
+    melee: { key: "hoplite", emoji: "🛡️", name: "Hoplite", hp: 140, dmg: 12, range: 1, speed: 1.7, atkCd: 1.0, wood: 20, food: 70, train: 7 },
+    ranged: { key: "archer", emoji: "🎯", name: "Archer", hp: 50, dmg: 9, range: 4, speed: 1.9, atkCd: 1.1, wood: 30, food: 40, train: 6 },
+    blurb: ["🛡️ Hoplite — super tough, holds the line", "🎯 Archer — steady ranged", "Balanced economy"]
   }
 };
-const VILLAGER = { key: "villager", emoji: "🧑‍🌾", name: "村民", hp: 45, dmg: 4, range: 1, speed: 1.9, atkCd: 1.1, wood: 0, food: 50, train: 5 };
+const VILLAGER = { key: "villager", emoji: "🧑‍🌾", name: "Villager", hp: 45, dmg: 4, range: 1, speed: 1.9, atkCd: 1.1, wood: 0, food: 50, train: 5 };
 
 // ---- game state ----
 let G = null; // set on start
@@ -203,8 +203,8 @@ function addUnit(g, kind, player, tx, ty) {
   return u;
 }
 const BUILDINGS = {
-  tc: { emoji: "🏯", name: "主城", w: 2, h: 2, hp: 1200, wood: 0, food: 0 },
-  barracks: { emoji: "⛺", name: "兵营", w: 2, h: 2, hp: 600, wood: 120, food: 0 }
+  tc: { emoji: "🏯", name: "Town Center", w: 2, h: 2, hp: 1200, wood: 0, food: 0 },
+  barracks: { emoji: "⛺", name: "Barracks", w: 2, h: 2, hp: 600, wood: 120, food: 0 }
 };
 function addBuilding(g, kind, player, tx, ty, opts) {
   const d = BUILDINGS[kind];
@@ -456,7 +456,7 @@ function updateUnit(g, u, dt) {
       u.path = [];
       b.buildProg += dt;
       b.hp = Math.min(b.maxhp, 1 + (b.maxhp - 1) * (b.buildProg / 8));
-      if (b.buildProg >= 8) { b.building = false; b.hp = b.maxhp; u.target = { type: "idle" }; toast(g, "🏗️ 兵营建好了!"); }
+      if (b.buildProg >= 8) { b.building = false; b.hp = b.maxhp; u.target = { type: "idle" }; toast(g, "🏗️ Barracks ready!"); }
     } else {
       if (!u.path || u.path.length === 0) { const [ux, uy] = unitTile(u); u.path = findPath(g, ux, uy, b.tx, b.ty + b.h) || []; }
       moveAlong(g, u, dt, TILE * 1.4, b.cx, b.cy);
@@ -506,9 +506,9 @@ function pay(g, player, c) { g.players[player].wood -= c.wood; g.players[player]
 
 function queueTrain(g, building, kind) {
   const player = building.player;
-  if (popCount(g, player) + building.queue.length >= g.popcap) { if (player === 0) toast(g, "👥 人口满了"); return false; }
+  if (popCount(g, player) + building.queue.length >= g.popcap) { if (player === 0) toast(g, "👥 Population full"); return false; }
   const c = costOf(g, player, kind);
-  if (!canAfford(g, player, c)) { if (player === 0) toast(g, "资源不够 🌲🍖"); return false; }
+  if (!canAfford(g, player, c)) { if (player === 0) toast(g, "Not enough resources 🌲🍖"); return false; }
   pay(g, player, c);
   if (building.queue.length === 0) building.prodT = trainTime(g, player, kind);
   building.queue.push(kind);
@@ -531,7 +531,7 @@ function placeBuilding(g, kind, tx, ty) {
     for (const b of g.buildings) if (x >= b.tx && x < b.tx + b.w && y >= b.ty && y < b.ty + b.h) return false;
   }
   const c = { wood: d.wood, food: d.food };
-  if (!canAfford(g, 0, c)) { toast(g, "资源不够 🌲"); return false; }
+  if (!canAfford(g, 0, c)) { toast(g, "Not enough wood 🌲"); return false; }
   pay(g, 0, c);
   const b = addBuilding(g, kind, 0, tx, ty, { building: true });
   // assign selected villagers to build
@@ -766,14 +766,14 @@ function onUp(ev) {
 
   // something selected -> command, unless tapping own unit/building to reselect
   const selUnits = G.sel.map(id => findEntById(G, id)).filter(u => u && u.player === 0 && !BUILDINGS[u.kind]);
-  if (enemyUnit) { commandAttack(G, selUnits, enemyUnit); toast(G, "⚔️ 进攻!"); }
-  else if (enemyBld) { commandAttack(G, selUnits, enemyBld); toast(G, "⚔️ 拆主城!"); }
+  if (enemyUnit) { commandAttack(G, selUnits, enemyUnit); toast(G, "⚔️ Attack!"); }
+  else if (enemyBld) { commandAttack(G, selUnits, enemyBld); toast(G, "⚔️ Raze it!"); }
   else if (ownUnit && selUnits.length <= 1) { G.sel = [ownUnit.id]; refreshActionBar(); }
   else if (ownBld && selUnits.length === 0) { G.sel = [ownBld.id]; refreshActionBar(); }
   else {
     const t = tileAt(G, tile[0], tile[1]);
     if ((t === T_TREE || t === T_FOOD) && selUnits.some(u => u.kind === "villager")) {
-      commandGather(G, selUnits.filter(u => u.kind === "villager"), tile[0], tile[1]); toast(G, "⛏️ 去采集");
+      commandGather(G, selUnits.filter(u => u.kind === "villager"), tile[0], tile[1]); toast(G, "⛏️ Gathering");
     } else {
       commandMove(G, selUnits, tile[0], tile[1]);
     }
@@ -819,27 +819,27 @@ function refreshActionBar() {
   const civ = CIVS[G.players[0].civ];
 
   // Always: select-all-army convenience
-  addBtn("⚔️", "全军", () => { G.sel = G.units.filter(u => u.player === 0 && u.kind !== "villager").map(u => u.id); refreshActionBar(); toast(G, "选中全部军队"); });
-  addBtn("👷", "选村民", () => { G.sel = G.units.filter(u => u.player === 0 && u.kind === "villager").map(u => u.id); refreshActionBar(); });
+  addBtn("⚔️", "All Army", () => { G.sel = G.units.filter(u => u.player === 0 && u.kind !== "villager").map(u => u.id); refreshActionBar(); toast(G, "All army selected"); });
+  addBtn("👷", "Villagers", () => { G.sel = G.units.filter(u => u.player === 0 && u.kind === "villager").map(u => u.id); refreshActionBar(); });
 
   if (selTC || (!selBar && !selVill && sel.length === 0)) {
     const c = costOf(G, 0, "villager");
-    addBtn("🧑‍🌾", "村民 " + c.food + "🍖", () => { const tc = G.buildings.find(b => b.player === 0 && b.kind === "tc"); if (tc) queueTrain(G, tc, "villager"); refreshActionBar(); });
+    addBtn("🧑‍🌾", "Villager " + c.food + "🍖", () => { const tc = G.buildings.find(b => b.player === 0 && b.kind === "tc"); if (tc) queueTrain(G, tc, "villager"); refreshActionBar(); });
   }
   if (selVill) {
-    addBtn("⛺", "造兵营 " + BUILDINGS.barracks.wood + "🌲", () => { setBuildMode("barracks"); toast(G, "点地面放置兵营"); }, "build");
+    addBtn("⛺", "Barracks " + BUILDINGS.barracks.wood + "🌲", () => { setBuildMode("barracks"); toast(G, "Tap the ground to place it"); }, "build");
   }
   if (selBar || (G.buildings.some(b => b.player === 0 && b.kind === "barracks" && !b.building) && !selVill && !selTC)) {
     const m = civ.melee, r = civ.ranged;
     addBtn(m.emoji, m.name, () => { trainAtAnyBarracks(m.key); });
     addBtn(r.emoji, r.name, () => { trainAtAnyBarracks(r.key); });
   }
-  if (G.buildMode) addBtn("✖️", "取消", () => setBuildMode(null));
+  if (G.buildMode) addBtn("✖️", "Cancel", () => setBuildMode(null));
 }
 function trainAtAnyBarracks(kind) {
   const bar = G.buildings.filter(b => b.player === 0 && b.kind === "barracks" && !b.building && b.hp > 0)
     .sort((a, b) => a.queue.length - b.queue.length)[0];
-  if (!bar) { toast(G, "先造兵营 ⛺"); return; }
+  if (!bar) { toast(G, "Build a barracks first ⛺"); return; }
   queueTrain(G, bar, kind); refreshActionBar();
 }
 function addBtn(emoji, label, fn, cls) {
@@ -868,10 +868,10 @@ function updateHUD() {
 const overlay = document.getElementById("overlay");
 function showCivPick() {
   overlay.classList.remove("hidden");
-  overlay.innerHTML = `<h1>小小文明 · Tiny Empires</h1>
-    <p>选你的文明。采集 🌲🍒 → 选村民造兵营 ⛺ → 出兵 → 推平对面主城 🏯。<br>两方各有所长,没有谁最强。</p>
+  overlay.innerHTML = `<h1>Tiny Empires</h1>
+    <p>Pick your civilization. Gather 🌲🍒 → select a Villager to build a Barracks ⛺ → train an army → raze the enemy Town Center 🏯.<br>Each side has its own strengths — no "best" civ.</p>
     <div class="civpick" id="civpick"></div>
-    <p style="font-size:13px;opacity:.6">提示:拖框选多个单位 · "全军"一键集结 · 点敌人就开打</p>`;
+    <p style="font-size:13px;opacity:.6">Tip: drag a box to select many units · "All Army" rallies everyone · tap an enemy to fight</p>`;
   const pick = overlay.querySelector("#civpick");
   for (const key of ["china", "greece"]) {
     const c = CIVS[key];
@@ -893,9 +893,9 @@ function startGame(civKey) {
 function showEnd() {
   overlay.classList.remove("hidden");
   const win = G.over === "win";
-  overlay.innerHTML = `<h1>${win ? "🎉 胜利!" : "💀 失败"}</h1>
-    <p>${win ? "你推平了对面的主城,天下无敌!" : "你的主城被拆了。再来一局,这次先多造几个村民攒资源。"}</p>
-    <button class="bigbtn" id="again">再来一局</button>`;
+  overlay.innerHTML = `<h1>${win ? "🎉 Victory!" : "💀 Defeated"}</h1>
+    <p>${win ? "You razed the enemy Town Center — undefeated!" : "Your Town Center fell. Try again — this time train a few extra villagers first to stockpile resources."}</p>
+    <button class="bigbtn" id="again">Play Again</button>`;
   overlay.querySelector("#again").addEventListener("click", showCivPick);
 }
 
