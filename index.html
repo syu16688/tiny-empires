@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>小小文明 · Tiny Empires</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #1b2330; overflow: hidden;
+    font-family: -apple-system, "PingFang SC", "Segoe UI", Roboto, sans-serif; color: #eaf0f8; }
+  #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  #topbar { display: flex; align-items: center; gap: 14px; padding: 8px 12px; background: #0f1620;
+    font-size: 17px; font-weight: 600; flex: 0 0 auto; }
+  #topbar .res { display: flex; align-items: center; gap: 4px; }
+  #topbar .spacer { flex: 1; }
+  #topbar .civ { opacity: .85; font-weight: 700; }
+  #stage { flex: 1 1 auto; position: relative; display: flex; align-items: center; justify-content: center;
+    background: #11202f; min-height: 0; }
+  canvas { background: #6aa84f; touch-action: none; max-width: 100%; max-height: 100%; display: block;
+    box-shadow: 0 0 0 2px #0a0f16; }
+  #actionbar { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; background: #0f1620;
+    justify-content: center; }
+  .btn { background: #25405e; border: 1px solid #3a5d86; color: #eaf0f8; border-radius: 10px;
+    padding: 9px 12px; font-size: 15px; font-weight: 600; cursor: pointer; line-height: 1.2; min-height: 44px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 78px; }
+  .btn small { font-weight: 500; opacity: .8; font-size: 11px; }
+  .btn:active { background: #356; }
+  .btn.disabled { opacity: .4; pointer-events: none; }
+  .btn.build { background: #4a3a1e; border-color: #7a5d2e; }
+  #hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6);
+    padding: 6px 14px; border-radius: 20px; font-size: 14px; pointer-events: none; opacity: 0; transition: opacity .2s; }
+  #overlay { position: absolute; inset: 0; background: rgba(8,12,18,.92); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px; text-align: center; padding: 24px; z-index: 10; }
+  #overlay.hidden { display: none; }
+  #overlay h1 { font-size: 30px; margin: 0; }
+  #overlay p { margin: 0; opacity: .85; max-width: 460px; line-height: 1.5; font-size: 16px; }
+  .civpick { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .civcard { background: #16202e; border: 2px solid #2c425e; border-radius: 16px; padding: 18px 20px;
+    cursor: pointer; width: 220px; }
+  .civcard:active { transform: scale(.98); }
+  .civcard h2 { margin: 0 0 6px; font-size: 22px; }
+  .civcard .flag { font-size: 40px; }
+  .civcard ul { text-align: left; padding-left: 18px; margin: 10px 0 0; font-size: 14px; opacity: .9; line-height: 1.6; }
+  .bigbtn { background: #2f6b3f; border: none; color: #fff; border-radius: 12px; padding: 14px 28px;
+    font-size: 19px; font-weight: 700; cursor: pointer; }
+  .bigbtn:active { background: #3a8050; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="topbar">
+    <span class="res">🌲 <span id="wood">0</span></span>
+    <span class="res">🍖 <span id="food">0</span></span>
+    <span class="res">👥 <span id="pop">0</span>/<span id="popcap">0</span></span>
+    <span class="spacer"></span>
+    <span class="civ" id="civname"></span>
+  </div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hint"></div>
+    <div id="overlay">
+      <h1>小小文明 · Tiny Empires</h1>
+      <p>选一个文明。采集 🌲🍖 → 造兵营 → 出兵 → 推平对面的主城 🏯。每个文明各有所长,没有谁最强。</p>
+      <div class="civpick" id="civpick"></div>
+    </div>
+  </div>
+  <div id="actionbar"></div>
+</div>
+<script>
+"use strict";
+/* ===========================================================================
+   小小文明 · Tiny Empires  — v1
+   单文件 HTML5 Canvas RTS。希腊 vs 中国,打 AI。给 Sam 和儿子一起玩。
+   设计见 DESIGN_v1.md。零依赖、零构建,iPad Safari 直接跑。
+   =========================================================================== */
+
+// ---- grid / world ----
+const TILE = 44, COLS = 22, ROWS = 14;
+const W = COLS * TILE, H = ROWS * TILE;
+
+// ---- tile types ----
+const T_GRASS = 0, T_TREE = 1, T_FOOD = 2, T_WATER = 3;
+
+// ---- civ definitions ----
+const CIVS = {
+  china: {
+    name: "中国", flag: "🐉", color: "#c0392b", light: "#e9573f",
+    melee: { key: "cav", emoji: "🐎", name: "骑兵", hp: 100, dmg: 14, range: 1, speed: 2.6, atkCd: .9, wood: 20, food: 70, train: 7 },
+    ranged: { key: "xbow", emoji: "🏹", name: "弩兵", hp: 45, dmg: 13, range: 4, speed: 1.7, atkCd: 1.3, wood: 30, food: 40, train: 6 },
+    blurb: ["🐎 骑兵:快、冲锋猛", "🏹 弩兵:远程火力强", "后期解锁火药 💥"]
+  },
+  greece: {
+    name: "希腊", flag: "🏛️", color: "#2e6da4", light: "#4a90d9",
+    melee: { key: "hoplite", emoji: "🛡️", name: "重装步兵", hp: 140, dmg: 12, range: 1, speed: 1.7, atkCd: 1.0, wood: 20, food: 70, train: 7 },
+    ranged: { key: "archer", emoji: "🎯", name: "弓箭手", hp: 50, dmg: 9, range: 4, speed: 1.9, atkCd: 1.1, wood: 30, food: 40, train: 6 },
+    blurb: ["🛡️ 重装步兵:超硬,列阵防守", "🎯 弓箭手:稳定远程", "经济均衡"]
+  }
+};
+const VILLAGER = { key: "villager", emoji: "🧑‍🌾", name: "村民", hp: 45, dmg: 4, range: 1, speed: 1.9, atkCd: 1.1, wood: 0, food: 50, train: 5 };
+
+// ---- game state ----
+let G = null; // set on start
+
+function newGame(playerCivKey) {
+  const enemyCivKey = playerCivKey === "china" ? "greece" : "china";
+  const g = {
+    t: 0, over: null, // null | 'win' | 'lose'
+    map: [],
+    units: [], buildings: [], effects: [],
+    sel: [], // selected unit ids
+    buildMode: null, // building type pending placement
+    players: {
+      0: { civ: playerCivKey, wood: 180, food: 180, isAI: false },
+      1: { civ: enemyCivKey, wood: 180, food: 180, isAI: true, aiTimer: 6, aiAttackTimer: 28 }
+    },
+    popcap: 40,
+    nextId: 1,
+    hintT: 0
+  };
+  buildMap(g);
+  // town centers
+  const ptc = addBuilding(g, "tc", 0, 2, ROWS - 4);
+  const etc = addBuilding(g, "tc", 1, COLS - 3, 2);
+  // starting villagers
+  for (let i = 0; i < 3; i++) addUnit(g, "villager", 0, 4 + i, ROWS - 3);
+  for (let i = 0; i < 3; i++) addUnit(g, "villager", 1, COLS - 5 - i, 3);
+  return g;
+}
+
+function buildMap(g) {
+  g.map = [];
+  // deterministic-ish layout (no Math.random reliance for fairness; seeded LCG)
+  let seed = 1337;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  for (let y = 0; y < ROWS; y++) {
+    const row = [];
+    for (let x = 0; x < COLS; x++) row.push(T_GRASS);
+    g.map.push(row);
+  }
+  // forests near each base + center
+  const clumps = [
+    [5, ROWS - 4], [6, ROWS - 6], [3, ROWS - 7],
+    [COLS - 6, 3], [COLS - 7, 5], [COLS - 4, 6],
+    [Math.floor(COLS / 2), Math.floor(ROWS / 2)], [Math.floor(COLS / 2) - 2, Math.floor(ROWS / 2) + 1]
+  ];
+  for (const [cx, cy] of clumps) {
+    for (let i = 0; i < 6; i++) {
+      const x = cx + Math.floor((rnd() - .5) * 4), y = cy + Math.floor((rnd() - .5) * 4);
+      if (inBounds(x, y)) g.map[y][x] = T_TREE;
+    }
+  }
+  // food bushes near bases
+  const foods = [[6, ROWS - 3], [3, ROWS - 5], [COLS - 7, 2], [COLS - 4, 4], [Math.floor(COLS/2)+2, Math.floor(ROWS/2)-2]];
+  for (const [fx, fy] of foods) {
+    for (let i = 0; i < 4; i++) {
+      const x = fx + Math.floor((rnd() - .5) * 3), y = fy + Math.floor((rnd() - .5) * 3);
+      if (inBounds(x, y) && g.map[y][x] === T_GRASS) g.map[y][x] = T_FOOD;
+    }
+  }
+  // a little water for looks (center-ish, not blocking bases)
+  g.map[Math.floor(ROWS/2)][2] = T_WATER;
+  g.map[Math.floor(ROWS/2)][COLS-3] = T_WATER;
+  // keep base tiles clear
+  clearArea(g, 1, ROWS - 5, 4, ROWS - 1);
+  clearArea(g, COLS - 5, 1, COLS - 1, 4);
+}
+function clearArea(g, x0, y0, x1, y1) {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (inBounds(x, y)) g.map[y][x] = T_GRASS;
+}
+
+function inBounds(x, y) { return x >= 0 && y >= 0 && x < COLS && y < ROWS; }
+function tileAt(g, x, y) { return inBounds(x, y) ? g.map[y][x] : T_WATER; }
+function walkable(g, x, y) {
+  if (!inBounds(x, y)) return false;
+  const t = g.map[y][x];
+  if (t === T_TREE || t === T_WATER || t === T_FOOD) return false;
+  // buildings block
+  for (const b of g.buildings) if (b.hp > 0 && x >= b.tx && x < b.tx + b.w && y >= b.ty && y < b.ty + b.h) return false;
+  return true;
+}
+
+// ---- entities ----
+function statsFor(g, kind, player) {
+  if (kind === "villager") return VILLAGER;
+  const civ = CIVS[g.players[player].civ];
+  if (kind === civ.melee.key) return civ.melee;
+  if (kind === civ.ranged.key) return civ.ranged;
+  // fallback search both civs
+  for (const c of Object.values(CIVS)) { if (kind === c.melee.key) return c.melee; if (kind === c.ranged.key) return c.ranged; }
+  return VILLAGER;
+}
+function addUnit(g, kind, player, tx, ty) {
+  const s = statsFor(g, kind, player);
+  const u = {
+    id: g.nextId++, kind, player, emoji: s.emoji, name: s.name,
+    x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2,
+    hp: s.hp, maxhp: s.hp, dmg: s.dmg, range: s.range, speed: s.speed * 36, atkCd: s.atkCd,
+    cd: 0, path: [], target: null, // target = {type:'move'|'attack'|'gather'|'build', ...}
+    carry: 0, carryType: null, gatherCd: 0, buildRef: null
+  };
+  g.units.push(u);
+  return u;
+}
+const BUILDINGS = {
+  tc: { emoji: "🏯", name: "主城", w: 2, h: 2, hp: 1200, wood: 0, food: 0 },
+  barracks: { emoji: "⛺", name: "兵营", w: 2, h: 2, hp: 600, wood: 120, food: 0 }
+};
+function addBuilding(g, kind, player, tx, ty, opts) {
+  const d = BUILDINGS[kind];
+  const b = {
+    id: g.nextId++, kind, player, emoji: d.emoji, name: d.name,
+    tx, ty, w: d.w, h: d.h, hp: (opts && opts.building) ? 1 : d.hp, maxhp: d.hp,
+    building: !!(opts && opts.building), buildProg: 0,
+    queue: [], prodT: 0
+  };
+  b.cx = tx * TILE + (b.w * TILE) / 2;
+  b.cy = ty * TILE + (b.h * TILE) / 2;
+  g.buildings.push(b);
+  return b;
+}
+
+// ---- helpers ----
+function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+function unitTile(u) { return [Math.floor(u.x / TILE), Math.floor(u.y / TILE)]; }
+function alive(e) { return e && e.hp > 0; }
+function enemyOf(p) { return p === 0 ? 1 : 0; }
+function popCount(g, player) { return g.units.filter(u => u.player === player && u.hp > 0).length; }
+
+// ---- A* pathfinding on grid (unit collisions ignored; only terrain/buildings block) ----
+function findPath(g, sx, sy, tx, ty) {
+  if (!inBounds(tx, ty)) return null;
+  if (sx === tx && sy === ty) return [];
+  // if target not walkable, find nearest walkable adjacent
+  let goal = [tx, ty];
+  if (!walkable(g, tx, ty)) {
+    const adj = nearestWalkable(g, tx, ty, sx, sy);
+    if (!adj) return null;
+    goal = adj;
+  }
+  const [gx, gy] = goal;
+  const key = (x, y) => y * COLS + x;
+  const open = [[sx, sy]];
+  const came = new Map();
+  const gscore = new Map(); gscore.set(key(sx, sy), 0);
+  const fscore = new Map(); fscore.set(key(sx, sy), Math.abs(sx - gx) + Math.abs(sy - gy));
+  const inOpen = new Set([key(sx, sy)]);
+  let guard = 0;
+  while (open.length && guard++ < 4000) {
+    // pick lowest f
+    let bi = 0; for (let i = 1; i < open.length; i++) if ((fscore.get(key(open[i][0], open[i][1])) ?? 1e9) < (fscore.get(key(open[bi][0], open[bi][1])) ?? 1e9)) bi = i;
+    const [cx, cy] = open.splice(bi, 1)[0]; inOpen.delete(key(cx, cy));
+    if (cx === gx && cy === gy) {
+      const path = []; let ck = key(cx, cy); let cur = [cx, cy];
+      while (came.has(ck)) { path.unshift(cur); cur = came.get(ck); ck = key(cur[0], cur[1]); }
+      return path;
+    }
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (!walkable(g, nx, ny) && !(nx === gx && ny === gy)) continue;
+      if (!inBounds(nx, ny)) continue;
+      const tentative = (gscore.get(key(cx, cy)) ?? 1e9) + 1;
+      if (tentative < (gscore.get(key(nx, ny)) ?? 1e9)) {
+        came.set(key(nx, ny), [cx, cy]);
+        gscore.set(key(nx, ny), tentative);
+        fscore.set(key(nx, ny), tentative + Math.abs(nx - gx) + Math.abs(ny - gy));
+        if (!inOpen.has(key(nx, ny))) { open.push([nx, ny]); inOpen.add(key(nx, ny)); }
+      }
+    }
+  }
+  return null;
+}
+function nearestWalkable(g, tx, ty, fromX, fromY) {
+  let best = null, bd = 1e9;
+  for (let r = 1; r <= 4; r++) {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const x = tx + dx, y = ty + dy;
+      if (walkable(g, x, y)) { const d = Math.abs(x - fromX) + Math.abs(y - fromY); if (d < bd) { bd = d; best = [x, y]; } }
+    }
+    if (best) return best;
+  }
+  return best;
+}
+
+// ---- commands ----
+function commandMove(g, units, tx, ty) {
+  for (const u of units) {
+    if (u.player !== 0) continue;
+    const [ux, uy] = unitTile(u);
+    const path = findPath(g, ux, uy, tx, ty);
+    u.path = path || [];
+    u.target = { type: "move" };
+    u.buildRef = null;
+  }
+}
+function commandAttack(g, units, targetEnt) {
+  for (const u of units) { if (u.player !== 0) continue; u.target = { type: "attack", id: targetEnt.id, isBuilding: !!targetEnt.kind && BUILDINGS[targetEnt.kind] !== undefined }; }
+}
+function commandGather(g, units, tx, ty) {
+  const res = tileAt(g, tx, ty);
+  for (const u of units) {
+    if (u.player !== 0 || u.kind !== "villager") continue;
+    u.target = { type: "gather", tx, ty, res };
+    u.path = []; u.carryType = res === T_TREE ? "wood" : "food";
+  }
+}
+
+function findEntById(g, id) {
+  for (const u of g.units) if (u.id === id) return u;
+  for (const b of g.buildings) if (b.id === id) return b;
+  return null;
+}
+
+// ---- update loop ----
+function update(g, dt) {
+  if (g.over) return;
+  g.t += dt;
+  if (g.hintT > 0) g.hintT -= dt;
+  // buildings production
+  for (const b of g.buildings) {
+    if (b.hp <= 0) continue;
+    if (b.building) continue;
+    if (b.queue.length) {
+      b.prodT -= dt;
+      if (b.prodT <= 0) {
+        const item = b.queue.shift();
+        spawnFromBuilding(g, b, item);
+        if (b.queue.length) b.prodT = trainTime(g, b.player, b.queue[0]);
+      }
+    }
+  }
+  // units
+  for (const u of g.units) {
+    if (u.hp <= 0) continue;
+    if (u.cd > 0) u.cd -= dt;
+    if (u.gatherCd > 0) u.gatherCd -= dt;
+    updateUnit(g, u, dt);
+  }
+  // effects
+  for (const e of g.effects) e.t -= dt;
+  g.effects = g.effects.filter(e => e.t > 0);
+  // cull dead
+  g.units = g.units.filter(u => u.hp > 0);
+  g.buildings = g.buildings.filter(b => b.hp > 0);
+  g.sel = g.sel.filter(id => findEntById(g, id));
+  // AI
+  ai(g, dt);
+  // win/lose
+  const ptc = g.buildings.find(b => b.player === 0 && b.kind === "tc");
+  const etc = g.buildings.find(b => b.player === 1 && b.kind === "tc");
+  if (!etc) g.over = "win";
+  else if (!ptc) g.over = "lose";
+}
+
+function moveAlong(g, u, dt, stopDist, tx, ty) {
+  // move toward pixel target along path; returns true when within stopDist of (tx,ty) pixel goal
+  const goalpx = tx, goalpy = ty;
+  if (u.path && u.path.length) {
+    const [nx, ny] = u.path[0];
+    const px = nx * TILE + TILE / 2, py = ny * TILE + TILE / 2;
+    stepTo(u, px, py, dt);
+    if (dist(u.x, u.y, px, py) < 3) u.path.shift();
+    return false;
+  } else {
+    if (dist(u.x, u.y, goalpx, goalpy) <= stopDist) return true;
+    stepTo(u, goalpx, goalpy, dt);
+    return dist(u.x, u.y, goalpx, goalpy) <= stopDist;
+  }
+}
+function stepTo(u, px, py, dt) {
+  const d = dist(u.x, u.y, px, py);
+  if (d < 0.01) return;
+  const step = Math.min(d, u.speed * dt);
+  u.x += (px - u.x) / d * step;
+  u.y += (py - u.y) / d * step;
+}
+
+function updateUnit(g, u, dt) {
+  const tgt = u.target;
+  // auto-acquire for idle military
+  if (u.kind !== "villager") {
+    if (!tgt || tgt.type === "idle") {
+      const e = nearestEnemy(g, u, 5 * TILE);
+      if (e) { u.target = { type: "attack", id: e.id, isBuilding: false, auto: true }; }
+    } else if (tgt.type === "attack" && tgt.auto) {
+      const e = findEntById(g, tgt.id);
+      if (!alive(e)) u.target = { type: "idle" };
+    }
+  }
+
+  if (!u.target || u.target.type === "idle" || u.target.type === "move") {
+    if (u.target && u.target.type === "move") {
+      if (!u.path || u.path.length === 0) u.target = { type: "idle" };
+      else moveAlong(g, u, dt, 2, 0, 0);
+    }
+    return;
+  }
+
+  if (u.target.type === "attack") {
+    const e = findEntById(g, u.target.id);
+    if (!alive(e)) { u.target = { type: "idle" }; u.path = []; return; }
+    const ex = e.kind && BUILDINGS[e.kind] ? e.cx : e.x;
+    const ey = e.kind && BUILDINGS[e.kind] ? e.cy : e.y;
+    const reach = u.range * TILE + (e.kind && BUILDINGS[e.kind] ? TILE * 0.7 : 14);
+    if (dist(u.x, u.y, ex, ey) <= reach) {
+      u.path = [];
+      if (u.cd <= 0) {
+        u.cd = u.atkCd;
+        e.hp -= u.dmg;
+        if (u.range > 1) g.effects.push({ type: "shot", x: u.x, y: u.y, x2: ex, y2: ey, t: .12 });
+        else g.effects.push({ type: "hit", x: ex, y: ey, t: .15 });
+      }
+    } else {
+      // path toward target tile
+      if (!u.path || u.path.length === 0) {
+        const [ux, uy] = unitTile(u);
+        const tt = e.kind && BUILDINGS[e.kind] ? [e.tx, e.ty + e.h - 1] : unitTile(e);
+        u.path = findPath(g, ux, uy, tt[0], tt[1]) || [];
+      }
+      moveAlong(g, u, dt, 2, ex, ey);
+      // re-path occasionally for moving targets
+      if (!(e.kind && BUILDINGS[e.kind]) && Math.random() < dt * 1.5) {
+        const [ux, uy] = unitTile(u); const tt = unitTile(e);
+        u.path = findPath(g, ux, uy, tt[0], tt[1]) || u.path;
+      }
+    }
+    return;
+  }
+
+  if (u.target.type === "gather") {
+    const { tx, ty } = u.target;
+    const res = tileAt(g, tx, ty);
+    if (res !== T_TREE && res !== T_FOOD) { u.target = { type: "idle" }; return; }
+    const carryType = res === T_TREE ? "wood" : "food";
+    // if full, go deposit
+    if (u.carry >= 10) { gotoDeposit(g, u, dt); return; }
+    // walk adjacent to resource
+    const gpx = tx * TILE + TILE / 2, gpy = ty * TILE + TILE / 2;
+    if (dist(u.x, u.y, gpx, gpy) <= TILE * 1.05) {
+      u.path = [];
+      if (u.gatherCd <= 0) { u.gatherCd = .6; u.carry += 2; u.carryType = carryType; }
+    } else {
+      if (!u.path || u.path.length === 0) {
+        const [ux, uy] = unitTile(u);
+        u.path = findPath(g, ux, uy, tx, ty) || [];
+      }
+      moveAlong(g, u, dt, TILE * 1.0, gpx, gpy);
+    }
+    return;
+  }
+
+  if (u.target.type === "build") {
+    const b = findEntById(g, u.target.id);
+    if (!alive(b) || !b.building) { u.target = { type: "idle" }; return; }
+    if (dist(u.x, u.y, b.cx, b.cy) <= TILE * 1.4) {
+      u.path = [];
+      b.buildProg += dt;
+      b.hp = Math.min(b.maxhp, 1 + (b.maxhp - 1) * (b.buildProg / 8));
+      if (b.buildProg >= 8) { b.building = false; b.hp = b.maxhp; u.target = { type: "idle" }; toast(g, "🏗️ 兵营建好了!"); }
+    } else {
+      if (!u.path || u.path.length === 0) { const [ux, uy] = unitTile(u); u.path = findPath(g, ux, uy, b.tx, b.ty + b.h) || []; }
+      moveAlong(g, u, dt, TILE * 1.4, b.cx, b.cy);
+    }
+    return;
+  }
+}
+
+function gotoDeposit(g, u, dt) {
+  // nearest own tc
+  const tc = g.buildings.filter(b => b.player === u.player && b.kind === "tc" && b.hp > 0)
+    .sort((a, b) => dist(u.x, u.y, a.cx, a.cy) - dist(u.x, u.y, b.cx, b.cy))[0];
+  if (!tc) { u.target = { type: "idle" }; return; }
+  if (dist(u.x, u.y, tc.cx, tc.cy) <= TILE * 1.3) {
+    g.players[u.player][u.carryType] = (g.players[u.player][u.carryType] || 0) + u.carry;
+    u.carry = 0; u.path = [];
+    // resume gather
+  } else {
+    if (!u.path || u.path.length === 0) { const [ux, uy] = unitTile(u); u.path = findPath(g, ux, uy, tc.tx, tc.ty + tc.h) || []; }
+    moveAlong(g, u, dt, TILE * 1.3, tc.cx, tc.cy);
+  }
+}
+
+function nearestEnemy(g, u, maxd) {
+  let best = null, bd = maxd;
+  for (const e of g.units) { if (e.player === u.player || e.hp <= 0) continue; const d = dist(u.x, u.y, e.x, e.y); if (d < bd) { bd = d; best = e; } }
+  for (const b of g.buildings) { if (b.player === u.player || b.hp <= 0) continue; const d = dist(u.x, u.y, b.cx, b.cy); if (d < bd) { bd = d; best = b; } }
+  return best;
+}
+
+// ---- training / building ----
+function trainTime(g, player, kind) {
+  if (kind === "villager") return VILLAGER.train;
+  return statsFor(g, kind, player).train;
+}
+function trainCost(g, player, kind) {
+  if (kind === "villager") return { wood: VILLAGER.wood, food: VILLAGER.food };
+  const s = statsFor(g, player === undefined ? 0 : player, kind);
+  return { wood: s.wood, food: s.food };
+}
+function costOf(g, player, kind) {
+  if (kind === "villager") return { wood: VILLAGER.wood, food: VILLAGER.food };
+  const s = statsFor(g, kind, player); return { wood: s.wood, food: s.food };
+}
+function canAfford(g, player, c) { const p = g.players[player]; return p.wood >= c.wood && p.food >= c.food; }
+function pay(g, player, c) { g.players[player].wood -= c.wood; g.players[player].food -= c.food; }
+
+function queueTrain(g, building, kind) {
+  const player = building.player;
+  if (popCount(g, player) + building.queue.length >= g.popcap) { if (player === 0) toast(g, "👥 人口满了"); return false; }
+  const c = costOf(g, player, kind);
+  if (!canAfford(g, player, c)) { if (player === 0) toast(g, "资源不够 🌲🍖"); return false; }
+  pay(g, player, c);
+  if (building.queue.length === 0) building.prodT = trainTime(g, player, kind);
+  building.queue.push(kind);
+  return true;
+}
+function spawnFromBuilding(g, b, kind) {
+  // spawn at a free tile near building
+  let spot = nearestWalkable(g, b.tx + b.w, b.ty + b.h - 1, b.tx, b.ty) || [b.tx, b.ty + b.h];
+  const u = addUnit(g, kind, b.player, spot[0], spot[1]);
+  // rally: player units idle; AI units handled by ai()
+  return u;
+}
+
+function placeBuilding(g, kind, tx, ty) {
+  const d = BUILDINGS[kind];
+  // check area walkable & clear
+  for (let y = ty; y < ty + d.h; y++) for (let x = tx; x < tx + d.w; x++) {
+    if (!inBounds(x, y)) return false;
+    if (g.map[y][x] !== T_GRASS) return false;
+    for (const b of g.buildings) if (x >= b.tx && x < b.tx + b.w && y >= b.ty && y < b.ty + b.h) return false;
+  }
+  const c = { wood: d.wood, food: d.food };
+  if (!canAfford(g, 0, c)) { toast(g, "资源不够 🌲"); return false; }
+  pay(g, 0, c);
+  const b = addBuilding(g, kind, 0, tx, ty, { building: true });
+  // assign selected villagers to build
+  const vills = g.sel.map(id => findEntById(g, id)).filter(u => u && u.kind === "villager" && u.player === 0);
+  const builders = vills.length ? vills : g.units.filter(u => u.player === 0 && u.kind === "villager").slice(0, 1);
+  for (const v of builders) v.target = { type: "build", id: b.id };
+  return true;
+}
+
+// ---- AI ----
+function ai(g, dt) {
+  const P = g.players[1];
+  P.aiTimer -= dt; P.aiAttackTimer -= dt;
+  const myUnits = g.units.filter(u => u.player === 1);
+  const myVills = myUnits.filter(u => u.kind === "villager");
+  const myMil = myUnits.filter(u => u.kind !== "villager");
+  const tc = g.buildings.find(b => b.player === 1 && b.kind === "tc");
+  const barracks = g.buildings.filter(b => b.player === 1 && b.kind === "barracks" && b.hp > 0);
+
+  // keep villagers gathering
+  for (const v of myVills) {
+    if (!v.target || v.target.type === "idle") {
+      const node = nearestResource(g, v);
+      if (node) v.target = { type: "gather", tx: node[0], ty: node[1] };
+    }
+  }
+  if (P.aiTimer <= 0) {
+    P.aiTimer = 3.5;
+    // economy: keep ~5 villagers
+    if (tc && myVills.length < 5 && tc.queue.length === 0) queueTrain(g, tc, "villager");
+    // build a barracks if none and can afford
+    if (barracks.length === 0 && !g.buildings.some(b => b.player === 1 && b.kind === "barracks") && canAfford(g, 1, { wood: BUILDINGS.barracks.wood, food: 0 })) {
+      aiBuildBarracks(g);
+    }
+    // train military from barracks
+    const civ = CIVS[P.civ];
+    for (const b of barracks) {
+      if (b.queue.length < 2) {
+        const pick = (myMil.length % 2 === 0) ? civ.melee.key : civ.ranged.key;
+        queueTrain(g, b, pick);
+      }
+    }
+  }
+  // idle military gathers at a staging point near own tc until attack wave
+  if (P.aiAttackTimer <= 0 && myMil.length >= 4) {
+    P.aiAttackTimer = 26;
+    const ptc = g.buildings.find(b => b.player === 0 && b.kind === "tc");
+    const targetEnt = ptc || g.units.find(u => u.player === 0);
+    if (targetEnt) for (const m of myMil) m.target = { type: "attack", id: targetEnt.id, isBuilding: !!(targetEnt.kind && BUILDINGS[targetEnt.kind]) };
+  }
+}
+function nearestResource(g, u) {
+  let best = null, bd = 1e9;
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const t = g.map[y][x];
+    if (t === T_TREE || t === T_FOOD) { const d = dist(u.x, u.y, x * TILE, y * TILE); if (d < bd) { bd = d; best = [x, y]; } }
+  }
+  return best;
+}
+function aiBuildBarracks(g) {
+  const tc = g.buildings.find(b => b.player === 1 && b.kind === "tc");
+  if (!tc) return;
+  for (let r = 2; r <= 5; r++) {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const tx = tc.tx + dx, ty = tc.ty + dy;
+      if (canPlace(g, "barracks", tx, ty)) {
+        pay(g, 1, { wood: BUILDINGS.barracks.wood, food: 0 });
+        const b = addBuilding(g, "barracks", 1, tx, ty, { building: true });
+        const v = g.units.find(u => u.player === 1 && u.kind === "villager");
+        if (v) v.target = { type: "build", id: b.id };
+        else { b.building = false; b.hp = b.maxhp; }
+        return;
+      }
+    }
+  }
+}
+function canPlace(g, kind, tx, ty) {
+  const d = BUILDINGS[kind];
+  for (let y = ty; y < ty + d.h; y++) for (let x = tx; x < tx + d.w; x++) {
+    if (!inBounds(x, y) || g.map[y][x] !== T_GRASS) return false;
+    for (const b of g.buildings) if (x >= b.tx && x < b.tx + b.w && y >= b.ty && y < b.ty + b.h) return false;
+  }
+  return true;
+}
+
+// ---- toast ----
+function toast(g, msg) { g._toast = msg; g.hintT = 1.8; }
+
+/* =========================== RENDER + INPUT ============================= */
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+cv.width = W; cv.height = H;
+let dragSel = null;
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+  if (!G) return;
+  // tiles
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const t = G.map[y][x];
+    const px = x * TILE, py = y * TILE;
+    ctx.fillStyle = ((x + y) % 2 === 0) ? "#6fae52" : "#69a84f";
+    ctx.fillRect(px, py, TILE, TILE);
+    if (t === T_TREE) { drawEmoji("🌲", px + TILE / 2, py + TILE / 2 + 2, 30); }
+    else if (t === T_FOOD) { drawEmoji("🍒", px + TILE / 2, py + TILE / 2 + 2, 26); }
+    else if (t === T_WATER) { ctx.fillStyle = "#4a89c4"; ctx.fillRect(px, py, TILE, TILE); drawEmoji("🌊", px + TILE/2, py+TILE/2+2, 24); }
+  }
+  // build preview
+  if (G.buildMode) {
+    const m = lastPointerTile;
+    if (m) {
+      const ok = canPlace(G, G.buildMode, m[0], m[1]);
+      ctx.globalAlpha = .5;
+      ctx.fillStyle = ok ? "#7CFC00" : "#e74c3c";
+      ctx.fillRect(m[0] * TILE, m[1] * TILE, BUILDINGS[G.buildMode].w * TILE, BUILDINGS[G.buildMode].h * TILE);
+      ctx.globalAlpha = 1;
+    }
+  }
+  // buildings
+  for (const b of G.buildings) {
+    const px = b.tx * TILE, py = b.ty * TILE, bw = b.w * TILE, bh = b.h * TILE;
+    ctx.fillStyle = b.player === 0 ? "rgba(46,109,164,.30)" : "rgba(192,57,43,.30)";
+    ctx.fillRect(px + 2, py + 2, bw - 4, bh - 4);
+    ctx.strokeStyle = b.player === 0 ? "#4a90d9" : "#e9573f";
+    ctx.lineWidth = 3; ctx.strokeRect(px + 2, py + 2, bw - 4, bh - 4);
+    drawEmoji(b.emoji, b.cx, b.cy + 2, 40);
+    if (b.building) { ctx.fillStyle = "rgba(0,0,0,.4)"; ctx.fillRect(px + 2, py + 2, bw - 4, bh - 4); drawEmoji("🏗️", b.cx, b.cy, 28); }
+    bar(px + 4, py - 6, bw - 8, b.hp / b.maxhp, b.player === 0 ? "#3fb34f" : "#e0563f");
+    // production indicator
+    if (b.queue && b.queue.length) { drawEmoji("⏳", px + bw - 8, py + 6, 16); }
+  }
+  // units
+  for (const u of G.units) {
+    const r = 15;
+    // selection ring
+    if (G.sel.includes(u.id)) { ctx.beginPath(); ctx.arc(u.x, u.y, r + 5, 0, 7); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5; ctx.stroke(); }
+    // team disc
+    ctx.beginPath(); ctx.arc(u.x, u.y, r, 0, 7);
+    ctx.fillStyle = u.player === 0 ? "rgba(46,109,164,.85)" : "rgba(192,57,43,.85)";
+    ctx.fill();
+    drawEmoji(u.emoji, u.x, u.y + 1, 22);
+    if (u.carry > 0) drawEmoji(u.carryType === "wood" ? "🌲" : "🍒", u.x + 11, u.y - 11, 14);
+    bar(u.x - r, u.y - r - 7, r * 2, u.hp / u.maxhp, u.player === 0 ? "#3fb34f" : "#e0563f");
+  }
+  // effects
+  for (const e of G.effects) {
+    if (e.type === "shot") { ctx.strokeStyle = "rgba(255,240,150,.9)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x2, e.y2); ctx.stroke(); }
+    else if (e.type === "hit") { drawEmoji("💥", e.x, e.y, 20); }
+  }
+  // drag selection box
+  if (dragSel) {
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+    ctx.strokeRect(dragSel.x0, dragSel.y0, dragSel.x1 - dragSel.x0, dragSel.y1 - dragSel.y0);
+    ctx.setLineDash([]);
+  }
+}
+function drawEmoji(ch, x, y, size) {
+  ctx.font = size + "px -apple-system, 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(ch, x, y);
+}
+function bar(x, y, w, frac, color) {
+  frac = Math.max(0, Math.min(1, frac));
+  ctx.fillStyle = "rgba(0,0,0,.45)"; ctx.fillRect(x, y, w, 4);
+  ctx.fillStyle = color; ctx.fillRect(x, y, w * frac, 4);
+}
+
+// ---- pointer input ----
+let lastPointerTile = null;
+function canvasPos(ev) {
+  const rect = cv.getBoundingClientRect();
+  const p = ev.touches ? ev.touches[0] : ev;
+  const x = (p.clientX - rect.left) * (W / rect.width);
+  const y = (p.clientY - rect.top) * (H / rect.height);
+  return [x, y];
+}
+let downPos = null, downTime = 0, moved = false;
+
+function onDown(ev) {
+  if (!G || G.over) return;
+  ev.preventDefault();
+  const [x, y] = canvasPos(ev);
+  downPos = [x, y]; downTime = performance.now(); moved = false;
+  lastPointerTile = [Math.floor(x / TILE), Math.floor(y / TILE)];
+  if (G.buildMode) return; // placement handled on up
+  // start potential drag-select on empty space if clicking own unit -> select, else begin box
+  dragSel = { x0: x, y0: y, x1: x, y1: y, active: true };
+}
+function onMove(ev) {
+  if (!G) return;
+  const [x, y] = canvasPos(ev);
+  lastPointerTile = [Math.floor(x / TILE), Math.floor(y / TILE)];
+  if (downPos && (Math.abs(x - downPos[0]) > 6 || Math.abs(y - downPos[1]) > 6)) moved = true;
+  if (dragSel && dragSel.active) { dragSel.x1 = x; dragSel.y1 = y; }
+}
+function onUp(ev) {
+  if (!G || G.over) { dragSel = null; downPos = null; return; }
+  const [x, y] = downPos ? (function () { const c = canvasPos2(ev); return c; })() : [0, 0];
+  const tile = lastPointerTile || [0, 0];
+  const wasDrag = dragSel && moved && dist(dragSel.x0, dragSel.y0, dragSel.x1, dragSel.y1) > 14;
+
+  // building placement
+  if (G.buildMode) {
+    const placed = placeBuilding(G, G.buildMode, tile[0], tile[1]);
+    if (placed) setBuildMode(null);
+    dragSel = null; downPos = null; return;
+  }
+
+  if (wasDrag) {
+    // box select own units
+    const x0 = Math.min(dragSel.x0, dragSel.x1), x1 = Math.max(dragSel.x0, dragSel.x1);
+    const y0 = Math.min(dragSel.y0, dragSel.y1), y1 = Math.max(dragSel.y0, dragSel.y1);
+    G.sel = G.units.filter(u => u.player === 0 && u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1).map(u => u.id);
+    dragSel = null; downPos = null; refreshActionBar(); return;
+  }
+  dragSel = null;
+
+  // tap logic
+  const px = downPos ? downPos[0] : tile[0] * TILE, py = downPos ? downPos[1] : tile[1] * TILE;
+  // hit own unit?
+  const ownUnit = topUnitAt(G, px, py, 0);
+  const enemyUnit = topUnitAt(G, px, py, 1);
+  const enemyBld = buildingAt(G, tile[0], tile[1], 1);
+  const ownBld = buildingAt(G, tile[0], tile[1], 0);
+
+  if (G.sel.length === 0) {
+    // nothing selected: select what was tapped
+    if (ownUnit) { G.sel = [ownUnit.id]; refreshActionBar(); }
+    else if (ownBld) { G.sel = [ownBld.id]; refreshActionBar(); }
+    downPos = null; return;
+  }
+
+  // something selected -> command, unless tapping own unit/building to reselect
+  const selUnits = G.sel.map(id => findEntById(G, id)).filter(u => u && u.player === 0 && !BUILDINGS[u.kind]);
+  if (enemyUnit) { commandAttack(G, selUnits, enemyUnit); toast(G, "⚔️ 进攻!"); }
+  else if (enemyBld) { commandAttack(G, selUnits, enemyBld); toast(G, "⚔️ 拆主城!"); }
+  else if (ownUnit && selUnits.length <= 1) { G.sel = [ownUnit.id]; refreshActionBar(); }
+  else if (ownBld && selUnits.length === 0) { G.sel = [ownBld.id]; refreshActionBar(); }
+  else {
+    const t = tileAt(G, tile[0], tile[1]);
+    if ((t === T_TREE || t === T_FOOD) && selUnits.some(u => u.kind === "villager")) {
+      commandGather(G, selUnits.filter(u => u.kind === "villager"), tile[0], tile[1]); toast(G, "⛏️ 去采集");
+    } else {
+      commandMove(G, selUnits, tile[0], tile[1]);
+    }
+  }
+  downPos = null;
+}
+function canvasPos2(ev) {
+  // up events may have no touches; use changedTouches
+  const rect = cv.getBoundingClientRect();
+  const p = (ev.changedTouches && ev.changedTouches[0]) || ev;
+  const x = (p.clientX - rect.left) * (W / rect.width);
+  const y = (p.clientY - rect.top) * (H / rect.height);
+  return [x, y];
+}
+function topUnitAt(g, px, py, player) {
+  let best = null, bd = 22;
+  for (const u of g.units) { if (u.player !== player || u.hp <= 0) continue; const d = dist(px, py, u.x, u.y); if (d < bd) { bd = d; best = u; } }
+  return best;
+}
+function buildingAt(g, tx, ty, player) {
+  for (const b of g.buildings) if (b.player === player && b.hp > 0 && tx >= b.tx && tx < b.tx + b.w && ty >= b.ty && ty < b.ty + b.h) return b;
+  return null;
+}
+
+cv.addEventListener("mousedown", onDown);
+window.addEventListener("mousemove", onMove);
+window.addEventListener("mouseup", onUp);
+cv.addEventListener("touchstart", onDown, { passive: false });
+cv.addEventListener("touchmove", (e) => { e.preventDefault(); onMove(e); }, { passive: false });
+cv.addEventListener("touchend", onUp, { passive: false });
+
+/* ============================ UI / ACTION BAR =========================== */
+const actionbar = document.getElementById("actionbar");
+function setBuildMode(kind) { G.buildMode = kind; refreshActionBar(); }
+
+function refreshActionBar() {
+  actionbar.innerHTML = "";
+  if (!G || G.over) return;
+  const sel = G.sel.map(id => findEntById(G, id)).filter(Boolean);
+  const selTC = sel.find(e => e.kind === "tc" && e.player === 0);
+  const selBar = sel.find(e => e.kind === "barracks" && e.player === 0 && !e.building);
+  const selVill = sel.find(e => e.kind === "villager" && e.player === 0);
+  const civ = CIVS[G.players[0].civ];
+
+  // Always: select-all-army convenience
+  addBtn("⚔️", "全军", () => { G.sel = G.units.filter(u => u.player === 0 && u.kind !== "villager").map(u => u.id); refreshActionBar(); toast(G, "选中全部军队"); });
+  addBtn("👷", "选村民", () => { G.sel = G.units.filter(u => u.player === 0 && u.kind === "villager").map(u => u.id); refreshActionBar(); });
+
+  if (selTC || (!selBar && !selVill && sel.length === 0)) {
+    const c = costOf(G, 0, "villager");
+    addBtn("🧑‍🌾", "村民 " + c.food + "🍖", () => { const tc = G.buildings.find(b => b.player === 0 && b.kind === "tc"); if (tc) queueTrain(G, tc, "villager"); refreshActionBar(); });
+  }
+  if (selVill) {
+    addBtn("⛺", "造兵营 " + BUILDINGS.barracks.wood + "🌲", () => { setBuildMode("barracks"); toast(G, "点地面放置兵营"); }, "build");
+  }
+  if (selBar || (G.buildings.some(b => b.player === 0 && b.kind === "barracks" && !b.building) && !selVill && !selTC)) {
+    const m = civ.melee, r = civ.ranged;
+    addBtn(m.emoji, m.name, () => { trainAtAnyBarracks(m.key); });
+    addBtn(r.emoji, r.name, () => { trainAtAnyBarracks(r.key); });
+  }
+  if (G.buildMode) addBtn("✖️", "取消", () => setBuildMode(null));
+}
+function trainAtAnyBarracks(kind) {
+  const bar = G.buildings.filter(b => b.player === 0 && b.kind === "barracks" && !b.building && b.hp > 0)
+    .sort((a, b) => a.queue.length - b.queue.length)[0];
+  if (!bar) { toast(G, "先造兵营 ⛺"); return; }
+  queueTrain(G, bar, kind); refreshActionBar();
+}
+function addBtn(emoji, label, fn, cls) {
+  const b = document.createElement("div");
+  b.className = "btn" + (cls ? " " + cls : "");
+  b.innerHTML = `<span style="font-size:20px">${emoji}</span><small>${label}</small>`;
+  b.addEventListener("click", fn);
+  actionbar.appendChild(b);
+}
+
+/* ============================ HUD ============================ */
+function updateHUD() {
+  if (!G) return;
+  document.getElementById("wood").textContent = Math.floor(G.players[0].wood);
+  document.getElementById("food").textContent = Math.floor(G.players[0].food);
+  document.getElementById("pop").textContent = popCount(G, 0);
+  document.getElementById("popcap").textContent = G.popcap;
+  const civ = CIVS[G.players[0].civ];
+  document.getElementById("civname").textContent = civ.flag + " " + civ.name;
+  const hint = document.getElementById("hint");
+  if (G.hintT > 0 && G._toast) { hint.textContent = G._toast; hint.style.opacity = "1"; }
+  else hint.style.opacity = "0";
+}
+
+/* ============================ OVERLAY / START / END ============================ */
+const overlay = document.getElementById("overlay");
+function showCivPick() {
+  overlay.classList.remove("hidden");
+  overlay.innerHTML = `<h1>小小文明 · Tiny Empires</h1>
+    <p>选你的文明。采集 🌲🍒 → 选村民造兵营 ⛺ → 出兵 → 推平对面主城 🏯。<br>两方各有所长,没有谁最强。</p>
+    <div class="civpick" id="civpick"></div>
+    <p style="font-size:13px;opacity:.6">提示:拖框选多个单位 · "全军"一键集结 · 点敌人就开打</p>`;
+  const pick = overlay.querySelector("#civpick");
+  for (const key of ["china", "greece"]) {
+    const c = CIVS[key];
+    const card = document.createElement("div");
+    card.className = "civcard";
+    card.style.borderColor = c.color;
+    card.innerHTML = `<div class="flag">${c.flag}</div><h2 style="color:${c.light}">${c.name}</h2>
+      <ul>${c.blurb.map(b => `<li>${b}</li>`).join("")}</ul>`;
+    card.addEventListener("click", () => startGame(key));
+    pick.appendChild(card);
+  }
+}
+function startGame(civKey) {
+  G = newGame(civKey);
+  overlay.classList.add("hidden");
+  refreshActionBar();
+  lastTime = performance.now();
+}
+function showEnd() {
+  overlay.classList.remove("hidden");
+  const win = G.over === "win";
+  overlay.innerHTML = `<h1>${win ? "🎉 胜利!" : "💀 失败"}</h1>
+    <p>${win ? "你推平了对面的主城,天下无敌!" : "你的主城被拆了。再来一局,这次先多造几个村民攒资源。"}</p>
+    <button class="bigbtn" id="again">再来一局</button>`;
+  overlay.querySelector("#again").addEventListener("click", showCivPick);
+}
+
+/* ============================ MAIN LOOP ============================ */
+let lastTime = 0, endShown = false;
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastTime) / 1000 || 0);
+  lastTime = now;
+  if (G && !G.over) { update(G, dt); endShown = false; }
+  if (G && G.over && !endShown) { endShown = true; showEnd(); refreshActionBar(); }
+  render();
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+
+// expose a tiny headless test hook (used by node smoke test; harmless in browser)
+if (typeof window !== "undefined") {
+  window.__game = { newGame, update, get G() { return G; }, set G(v) { G = v; } };
+}
+
+showCivPick();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
